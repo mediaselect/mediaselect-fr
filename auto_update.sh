@@ -1,6 +1,6 @@
 #!/bin/bash
 
-REPO_API="https://api.github.com/repos/mediaselect/mediaselect-fr/commits/master"
+REPO_API="https://api.github.com/repos/tvselect/mediaselect-fr/commits/master"
 LOCAL_COMMIT_FILE="$HOME/.config/mediaselect-fr/.last_commit"
 
 latest_commit=$(curl -s $REPO_API | jq -r '.sha')
