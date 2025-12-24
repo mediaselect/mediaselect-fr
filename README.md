@@ -1,4 +1,4 @@
-# mediaselect-fr v1.0.0
+# mediaselect-fr v2.0.0
 
 ## Instructions d'installation:
 
