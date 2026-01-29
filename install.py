@@ -222,6 +222,27 @@ try:
 except OSError as e:
     print(f"Error creating config at {config_path}: {e}")
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+config_dir = os.path.expanduser("~/.config/mediaselect-fr")
+os.makedirs(config_dir, exist_ok=True)
+
+config_gpgkey_path = os.path.join(config_dir, "public.key")
+
+gpgkey_path = os.path.join(
+    script_dir,
+    ".gpg",
+    "public.key",
+)
+
+if not os.path.exists(gpgkey_path):
+    raise FileNotFoundError(
+        f"GPG public key not found at expected location: {gpgkey_path}"
+    )
+
+shutil.copy(gpgkey_path, config_gpgkey_path)
+os.chmod(config_gpgkey_path, 0o640)
+
 # generate random times
 heure = random.randint(6, 23)
 minute = random.randint(0, 58)
