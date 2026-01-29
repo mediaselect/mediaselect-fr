@@ -5,11 +5,64 @@ import os
 import glob
 import shutil
 import shlex
+import re
 
 from configparser import ConfigParser
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from getpass import getuser
+from pathlib import Path
+
+
+_SAFE_ARG_RE = re.compile(r"^[^\x00\r\n]+$")
+
+
+def validate_arg(value, name):
+    """
+    Ensure argument does not contain newlines or NUL bytes.
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"{name} must be a string")
+    if not _SAFE_ARG_RE.match(value):
+        raise ValueError(f"Unsafe characters in {name}")
+    return value
+
+
+def safe_filename(value, max_len=80):
+    """
+    Convert arbitrary string into a filesystem-safe filename.
+    """
+    value = re.sub(r"[^a-zA-Z0-9._-]", "_", value)
+    return value[:max_len] or "unnamed"
+
+
+def schedule_at(command_args, at_time, log_path):
+    """
+    Securely schedule a command via `at` using argument-safe invocation.
+    """
+    if not isinstance(command_args, list):
+        raise ValueError("command_args must be a list")
+
+    for arg in command_args:
+        validate_arg(str(arg), "command argument")
+
+    quoted_cmd = " ".join(shlex.quote(str(arg)) for arg in command_args) + "\n"
+
+    try:
+        with open(log_path, "a", encoding="utf-8") as log:
+            proc = subprocess.Popen(
+                ["at", "-t", at_time],
+                stdin=subprocess.PIPE,
+                stdout=log,
+                stderr=log,
+                text=True,
+            )
+            proc.communicate(quoted_cmd, timeout=30)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        logging.warning("at scheduling timed out for command: %s", quoted_cmd)
+    except Exception as e:
+        logging.exception("Failed to schedule at job: %s", e)
 
 
 # --- Basic environment setup ---
@@ -280,34 +333,33 @@ for video in data:
                 try:
                     m3u8_link = config_iptv_provider["CHANNELS"][video["channel"].lower()]
                     if isinstance(m3u8_link, str) and m3u8_link.strip() != "":
-                        cmd = ["at", "-t", video_start]
-                        script = (
-                            ". $HOME/.local/share/mediaselect-fr/.venv/bin/activate "
-                            "&& python3 record_iptv.py {title} {provider} "
-                            "{recorder} '{m3u8_link}' {duration} {save} >> "
-                            "~/.local/share/mediaselect-fr/logs/record_{title}_"
-                            "original.log 2>&1\n".format(
-                                title=video["title"],
-                                provider=provider["iptv_provider"],
-                                recorder=provider.get("provider_recorder", ""),
-                                m3u8_link=m3u8_link,
-                                save="original",
-                                duration=video.get("duration", ""),
-                            )
+
+                        safe_title = validate_arg(video["title"], "title")
+                        safe_provider = validate_arg(provider["iptv_provider"], "provider")
+                        safe_recorder = validate_arg(provider.get("provider_recorder", ""), "recorder")
+                        safe_link = validate_arg(m3u8_link, "m3u8_link")
+                        safe_duration = str(int(video["duration"]))
+
+                        log_suffix = safe_filename(safe_title)
+
+                        command = [
+                            os.path.expanduser("~/.local/share/mediaselect-fr/.venv/bin/python3"),
+                            "record_iptv.py",
+                            safe_title,
+                            safe_provider,
+                            safe_recorder,
+                            safe_link,
+                            safe_duration,
+                            "original",
+                        ]
+
+                        schedule_at(
+                            command_args=command,
+                            at_time=video_start,
+                            log_path=os.path.expanduser(
+                                f"~/.local/share/mediaselect-fr/logs/record_{log_suffix}_original.log"
+                            ),
                         )
-                        try:
-                            with open(log_file, "a", encoding="utf-8") as log:
-                                launch = subprocess.Popen(
-                                    cmd, stdin=subprocess.PIPE, stdout=log, stderr=log
-                                )
-                                try:
-                                    launch.communicate(input=script.encode(), timeout=30)
-                                except subprocess.TimeoutExpired:
-                                    launch.kill()
-                                    logging.warning("Scheduling (at) process timed out for video %s", video.get("title"))
-                                launch.wait()
-                        except Exception as e:
-                            logging.exception("Failed to schedule recording with at for video %s: %s", video.get("title"), e)
 
                         iptv_provider_set = True
                         provider_iptv_recorded = provider["iptv_provider"]
@@ -375,38 +427,33 @@ for video in data:
                     )
                 m3u8_link = config_iptv_backup["CHANNELS"][video["channel"].lower()]
                 if isinstance(m3u8_link, str) and m3u8_link.strip() != "":
-                    cmd = [
-                        "at",
-                        "-t",
-                        video_start_backup,
+
+                    safe_title = validate_arg(video["title"], "title")
+                    safe_provider = validate_arg(provider["iptv_backup"], "provider")
+                    safe_recorder = validate_arg(provider.get("backup_recorder", ""), "recorder")
+                    safe_link = validate_arg(m3u8_link, "m3u8_link")
+                    safe_duration = str(int(video["duration"]))
+
+                    log_suffix = safe_filename(safe_title)
+
+                    command = [
+                        os.path.expanduser("~/.local/share/mediaselect-fr/.venv/bin/python3"),
+                        "record_iptv.py",
+                        safe_title,
+                        safe_provider,
+                        safe_recorder,
+                        safe_link,
+                        safe_duration,
+                        "backup",
                     ]
-                    script = (
-                        ". $HOME/.local/share/mediaselect-fr/.venv/bin/activate "
-                        "&& python3 record_iptv.py {title} {provider} "
-                        "{recorder} '{m3u8_link}' {duration} {save} >> "
-                        "~/.local/share/mediaselect-fr/logs/record_{title}_"
-                        "backup.log 2>&1\n".format(
-                            title=video["title"],
-                            provider=provider["iptv_backup"],
-                            recorder=provider.get("backup_recorder", ""),
-                            m3u8_link=m3u8_link,
-                            save="backup",
-                            duration=video["duration"],
-                        )
+
+                    schedule_at(
+                        command_args=command,
+                        at_time=video_start,
+                        log_path=os.path.expanduser(
+                            f"~/.local/share/mediaselect-fr/logs/record_{log_suffix}_backup.log"
+                        ),
                     )
-                    try:
-                        with open(log_file, "a", encoding="utf-8") as log:
-                            launch = subprocess.Popen(
-                                cmd, stdin=subprocess.PIPE, stdout=log, stderr=log
-                            )
-                            try:
-                                launch.communicate(input=script.encode(), timeout=30)
-                            except subprocess.TimeoutExpired:
-                                launch.kill()
-                                logging.warning("Scheduling backup (at) timed out for video %s", video.get("title"))
-                            launch.wait()
-                    except Exception as e:
-                        logging.exception("Failed to schedule backup recording: %s", e)
 
                     iptv_backup_set = True
                     provider_iptv_backup = provider["iptv_backup"]
@@ -461,38 +508,32 @@ for video in data:
                     )
                 m3u8_link = config_iptv_backup_2["CHANNELS"][video["channel"].lower()]
                 if isinstance(m3u8_link, str) and m3u8_link.strip() != "":
-                    cmd = [
-                        "at",
-                        "-t",
-                        video_start_backup_2,
+                    safe_title = validate_arg(video["title"], "title")
+                    safe_provider = validate_arg(provider["iptv_backup_2"], "provider")
+                    safe_recorder = validate_arg(provider.get("backup_2_recorder", ""), "recorder")
+                    safe_link = validate_arg(m3u8_link, "m3u8_link")
+                    safe_duration = str(int(video["duration"]))
+
+                    log_suffix = safe_filename(safe_title)
+
+                    command = [
+                        os.path.expanduser("~/.local/share/mediaselect-fr/.venv/bin/python3"),
+                        "record_iptv.py",
+                        safe_title,
+                        safe_provider,
+                        safe_recorder,
+                        safe_link,
+                        safe_duration,
+                        "backup_2",
                     ]
-                    script = (
-                        ". $HOME/.local/share/mediaselect-fr/.venv/bin/activate "
-                        "&& python3 record_iptv.py {title} {provider} "
-                        "{recorder} '{m3u8_link}' {duration} {save} >> "
-                        "~/.local/share/mediaselect-fr/logs/record_{title}_"
-                        "backup_2.log 2>&1\n".format(
-                            title=video["title"],
-                            provider=provider["iptv_backup_2"],
-                            recorder=provider.get("backup_2_recorder", ""),
-                            m3u8_link=m3u8_link,
-                            save="backup_2",
-                            duration=video["duration"],
-                        )
+
+                    schedule_at(
+                        command_args=command,
+                        at_time=video_start,
+                        log_path=os.path.expanduser(
+                            f"~/.local/share/mediaselect-fr/logs/record_{log_suffix}_backup_2.log"
+                        ),
                     )
-                    try:
-                        with open(log_file, "a", encoding="utf-8") as log:
-                            launch = subprocess.Popen(
-                                cmd, stdin=subprocess.PIPE, stdout=log, stderr=log
-                            )
-                            try:
-                                launch.communicate(input=script.encode(), timeout=30)
-                            except subprocess.TimeoutExpired:
-                                launch.kill()
-                                logging.warning("Scheduling backup_2 (at) timed out for video %s", video.get("title"))
-                            launch.wait()
-                    except Exception as e:
-                        logging.exception("Failed to schedule backup_2 recording: %s", e)
 
                     iptv_backup_2_set = True
                     provider_iptv_backup_2 = provider["iptv_backup_2"]
@@ -528,33 +569,20 @@ for video in data:
                 start_records_fusion.remove(video["start_fusion"])
             video["start_fusion"] = start_fusion_calcul(video["start_fusion"])
 
-        cmd = [
-            "at",
-            "-t",
-            video["start_fusion"],
-        ]
-        script = " ".join([
+        command = [
             "python3",
             "fusion_script.py",
-            video["title"],
-            provider_iptv_recorded,
-            provider_iptv_backup,
-            provider_iptv_backup_2,
-        ]) + "\n"
+            validate_arg(video["title"], "title"),
+            validate_arg(provider_iptv_recorded, "provider"),
+            validate_arg(provider_iptv_backup, "backup"),
+            validate_arg(provider_iptv_backup_2, "backup_2"),
+        ]
 
-        try:
-            with open(log_file, "a", encoding="utf-8") as log:
-                at_process = subprocess.Popen(
-                    cmd, stdin=subprocess.PIPE, stdout=log, stderr=log
-                )
-                try:
-                    at_process.communicate(input=script.encode(), timeout=30)
-                except subprocess.TimeoutExpired:
-                    at_process.kill()
-                    logging.warning("Scheduling fusion (at) timed out for %s", video.get("title"))
-                at_process.wait()
-        except Exception as e:
-            logging.exception("Failed to schedule fusion script for %s: %s", video.get("title"), e)
+        schedule_at(
+            command_args=command,
+            at_time=video["start_fusion"],
+            log_path=log_file,
+        )
 
 src = info_progs_path
 dest = info_progs_last_path
