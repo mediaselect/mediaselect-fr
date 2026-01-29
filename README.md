@@ -1,5 +1,5 @@
-# mediaselect-fr v2.0.0
+# mediaselect-fr v3.0.0
 
 ## Instructions d'installation:
 
-Voir les instructions d'installation sur la page de votre compte à l'adresse www.media-select.fr
+Consultez les instructions d'installation sur votre compte MEDIA-Select : www.media-select.fr
