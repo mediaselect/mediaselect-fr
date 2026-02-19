@@ -583,39 +583,47 @@ while auto_update.lower() not in answers:
         .lower()
     )
 
-# Export current crontab to a secure temp file
-try:
-    crontab_init = subprocess.Popen(["crontab", "-l"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout, stderr = crontab_init.communicate()
-    if crontab_init.returncode not in (0, 1):
-        # 1 is often returned when no crontab exists -> acceptable
-        print("Erreur lors de l'initialisation du cron: ", stderr.decode("utf-8"))
-        print(
-            "Le cron ne sera pas sauvegardé (ce qui est attendu si l'erreur "
-            "reportée est no crontab for user)."
-        )
-except Exception as e:
-    print(f"Failed to list crontab: {e}")
-    stdout = b""
+answer_cron = "maybe"
 
-# write to a secure temporary file (binary) and keep name for later use
-try:
-    with tempfile.NamedTemporaryFile("wb", delete=False) as tf:
-        tf_name = tf.name
-        tf.write(stdout)
-    # set strict perms on temp file
-    os.chmod(tf_name, 0o600)
-except OSError as e:
-    print(f"Failed to create temporary crontab export: {e}")
-    raise
+while answer_cron.lower() not in answers:
+    answer_cron = input(
+        "\nLe programme va maintenant ajouter une tâche cron à "
+        "votre crontab. Une sauvegarde de votre crontab sera "
+        "réalisée dans ce ficher: ~/.crontab_backup . "
+        "Voulez-vous continuer? (répondre par oui ou non): "
+    )
 
-# Read lines from the temp file
-try:
-    with open(tf_name, "r") as crontab_file:
-        cron_lines = crontab_file.readlines()
-except OSError as e:
-    print(f"Failed to read temporary crontab file: {e}")
-    cron_lines = []
+if answer_cron.lower() == "non":
+    print('\nSortie du programme.\n')
+    exit()
+
+backup_file = os.path.join(os.path.expanduser("~"), ".crontab_backup")
+with open(backup_file, "w", encoding='utf-8') as f:
+    try:
+        result = subprocess.run(["crontab", "-u", user, "-l"], check=True, stdout=f, stderr=subprocess.PIPE, universal_newlines=True)
+    except subprocess.CalledProcessError as e:
+        if "no crontab for" in e.stderr:
+            print(f"Il n'y a pas de crontab paramétré pour {user}."
+                    " Aucun backup n'a été effectué.")
+        else:
+            raise
+
+cron_file = os.path.join(os.path.expanduser("~"), ".local", "share", "mediaselect-fr", "cron_tasks.sh")
+with open(cron_file, "w", encoding='utf-8') as f:
+    try:
+        result = subprocess.run(["crontab", "-u", user, "-l"], check=True, stdout=f, stderr=subprocess.PIPE, universal_newlines=True)
+    except subprocess.CalledProcessError as e:
+        if "no crontab for" in e.stderr:
+            print(f"No crontab set for {user}")
+        else:
+            raise
+os.chmod(cron_file, 0o700)
+
+with open(
+    f"/home/{user}/.local/share/mediaselect-fr"
+    "/cron_tasks.sh", "r", encoding='utf-8'
+) as crontab_file:
+    cron_lines = crontab_file.readlines()
 
 curl = (
     "{minute} {heure} * * * env DBUS_SESSION_BUS_ADDRESS=unix:path=/run"
@@ -664,29 +672,17 @@ if "cd /home/$USER/mediaselect-fr &&" not in cron_lines_join:
 if auto_update.lower() == "oui" and "mediaselect-fr/auto_update" not in cron_lines_join:
     cron_lines.append(cron_auto_update)
 
-try:
-    with tempfile.NamedTemporaryFile("w", delete=False) as tf:
-        for cron_task in cron_lines:
-            tf.write(cron_task)
-        tf_cron_name = tf.name
-    os.chmod(tf_cron_name, 0o600)
+with open(
+    f"/home/{user}/.local/share/mediaselect-fr"
+    "/cron_tasks.sh", "w", encoding='utf-8'
+) as crontab_file:
+    for cron_task in cron_lines:
+        crontab_file.write(cron_task)
 
-    process = subprocess.run(["crontab", tf_cron_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if process.returncode != 0:
-        print(f"\n Error loading cron tasks: {process.stderr}")
-    else:
-        print("\n Cron tasks loaded successfully.")
-except OSError as e:
-    print(f"Failed to write crontab temporary file or load crontab: {e}")
-    raise
-finally:
-    # cleanup temporary files
-    for tmp in (tf_cron_name if 'tf_cron_name' in locals() else None, tf_name if 'tf_name' in locals() else None):
-        if tmp and os.path.exists(tmp):
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
+cron_file = os.path.join(os.path.expanduser("~"), ".local", "share", "mediaselect-fr", "cron_tasks.sh")
+subprocess.run(["crontab", "-u", user, cron_file], check=True)
 
+cron_file = os.path.join(os.path.expanduser("~"), ".local", "share", "mediaselect-fr", "cron_tasks.sh")
+os.remove(cron_file)
 print("\nLes tâches cron de votre box MEDIA-select (ou votre VM installée sur votre Freebox Delta "
-      "ou Ultra) sont maintenant configurés!\n")
+      "ou Ultra) sont maintenant configurées!\n")
