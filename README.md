@@ -3,6 +3,10 @@
 > 🏠 Turn your local network TV into an automated recording engine
 > 📼 Automatically record TV programs from RTSP streams (Freebox)
 
+![Demo](docs/demo-mediaselect-fr.gif)
+
+---
+
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![Platform](https://img.shields.io/badge/Platform-Linux-green)
 ![Architecture](https://img.shields.io/badge/Arch-ARM%20%7C%20x86-orange)
