@@ -1,7 +1,8 @@
 # 📺 mediaselect-fr v3.1.0
 
-> 🏠 Turn your local network TV into an automated recording engine
-> 📼 Automatically record TV programs from RTSP streams (Freebox)
+🏠 Turn your local network TV into an automated recording engine
+
+📼 Automatically record TV programs from RTSP streams (Freebox)
 
 ![Demo](docs/demo-mediaselect-fr.gif)
 
@@ -115,35 +116,43 @@ title + video_id + search + source.ts
 
 ### Install dependencies
 
+```bash id="install1"
 sudo apt update && sudo apt install at curl vlc mplayer streamlink virtualenv ffmpeg unzip jq
+```
 
 ---
 
 ### Download
 
+```bash id="install2"
 cd ~
 curl -L -o mediaselect-fr.zip https://github.com/mediaselect/mediaselect-fr/archive/refs/tags/v2.0.0.zip
 unzip mediaselect-fr.zip
 mv mediaselect-fr-2.0.0 mediaselect-fr
+```
 
 ---
 
 ### Setup
 
+```bash id="setup"
 mkdir -p ~/.local/share/mediaselect-fr ~/.config/mediaselect-fr
 
 cd ~/.local/share/mediaselect-fr
 virtualenv -p python3 .venv
 source .venv/bin/activate
 pip install -r ~/mediaselect-fr/requirements.txt
+```
 
 ---
 
 ### Install and start
 
+```bash id="install3"
 cd ~/mediaselect-fr
 source ~/.local/share/mediaselect-fr/.venv/bin/activate
 python3 install.py
+```
 
 ---
 
@@ -151,8 +160,10 @@ python3 install.py
 
 Set Freebox as RTSP source:
 
+```bash id="config"
 cd ~/mediaselect-fr
 cp free_conf.ini ~/.config/mediaselect-fr/iptv_select_conf.ini
+```
 
 ---
 
